@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Card Elimination Game (P2P)</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #lobby { margin: 20px; }
+        #game { display: none; }
+        .card { 
+            width: 60px; height: 90px; 
+            background: white; border-radius: 5px; 
+            margin: 5px; display: inline-block; 
+            line-height: 90px; font-size: 20px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+        .card.red { color: red; }
+        .card.black { color: black; }
+        #players { display: flex; justify-content: space-around; }
+        #your-cards { margin-top: 20px; }
+    </style>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div id="lobby">
+        <h1>Card Elimination Game</h1>
+        <button id="host-game">Host Game</button>
+        <div id="join-section" style="display: none;">
+            <input type="text" id="peer-id" placeholder="Enter Host's ID">
+            <button id="join-game">Join Game</button>
+        </div>
+        <div id="game-id-display" style="display: none;">
+            <p>Your Game ID: <span id="your-id"></span></p>
+            <p>Waiting for players...</p>
+        </div>
+    </div>
+
+    <div id="game">
+        <h2>Game Started!</h2>
+        <div id="players"></div>
+        <div id="your-cards"></div>
+        <div id="game-status">Waiting for your turn...</div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
