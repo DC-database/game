@@ -317,6 +317,20 @@
             color: white;
             cursor: pointer;
         }
+        
+        .firebase-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .firebase-info h3 {
+            color: #FFCB2B;
+            margin-bottom: 10px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -330,12 +344,12 @@
             <div class="player active" id="player1">
                 <h3><i class="fas fa-user"></i> Player 1</h3>
                 <div class="score">0</div>
-                <div class="status-dot"></div>
+                <div class="status-dot" id="player1Status"></div>
             </div>
             <div class="player" id="player2">
                 <h3><i class="fas fa-user"></i> Player 2</h3>
                 <div class="score">0</div>
-                <div class="status-dot"></div>
+                <div class="status-dot" id="player2Status"></div>
             </div>
         </div>
         
@@ -362,11 +376,11 @@
             <div id="gameIdDisplay" class="game-id-display">No active game</div>
             <div class="player-status">
                 <div class="status-indicator">
-                    <div class="status-dot" id="player1Status"></div>
+                    <div class="status-dot connected" id="player1StatusDot"></div>
                     <span>Player 1</span>
                 </div>
                 <div class="status-indicator">
-                    <div class="status-dot" id="player2Status"></div>
+                    <div class="status-dot" id="player2StatusDot"></div>
                     <span>Player 2</span>
                 </div>
             </div>
@@ -383,6 +397,16 @@
                 <li>The player with the most matches wins!</li>
             </ul>
         </div>
+        
+        <div class="firebase-info">
+            <h3><i class="fas fa-database"></i> Firebase Integration</h3>
+            <p>This game uses Firebase Realtime Database to synchronize game state between players. To make it work:</p>
+            <ol>
+                <li>Create a Firebase project at firebase.google.com</li>
+                <li>Get your Firebase configuration object</li>
+                <li>Replace the placeholder config in the code</li>
+            </ol>
+        </div>
     </div>
     
     <!-- Firebase SDK -->
@@ -390,16 +414,17 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     
     <script>
-        // Mock Firebase initialization (in a real app, you would use your actual Firebase config)
+        // Firebase configuration (replace with your actual config)
         const firebaseConfig = {
-            apiKey: "AIzaSyDummyKey1234567890",
-            authDomain: "your-project-id.firebaseapp.com",
-            databaseURL: "https://your-project-id.firebaseio.com",
-            projectId: "your-project-id",
-            storageBucket: "your-project-id.appspot.com",
-            messagingSenderId: "1234567890",
-            appId: "1:1234567890:web:abc123def456"
-        };
+  apiKey: "AIzaSyC4V1VsN6sg9ZNNIZ2r7zjuLcryE8hQRAY",
+  authDomain: "card-game-62ab1.firebaseapp.com",
+  databaseURL: "https://card-game-62ab1-default-rtdb.firebaseio.com",
+  projectId: "card-game-62ab1",
+  storageBucket: "card-game-62ab1.firebasestorage.app",
+  messagingSenderId: "816289831150",
+  appId: "1:816289831150:web:c44487023604d589a5fbff",
+  measurementId: "G-5D5Y6WV4CC"
+};
         
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
@@ -417,8 +442,8 @@
         const gameIdDisplay = document.getElementById('gameIdDisplay');
         const player1Element = document.getElementById('player1');
         const player2Element = document.getElementById('player2');
-        const player1Status = document.getElementById('player1Status');
-        const player2Status = document.getElementById('player2Status');
+        const player1StatusDot = document.getElementById('player1StatusDot');
+        const player2StatusDot = document.getElementById('player2StatusDot');
         const score1Element = player1Element.querySelector('.score');
         const score2Element = player2Element.querySelector('.score');
         
@@ -503,15 +528,37 @@
             // Set player ID
             playerId = 'player1';
             
+            // Create the game in Firebase
+            gameRef = database.ref('games/' + gameId);
+            
+            // Set initial game state
+            gameRef.set({
+                gameId: gameId,
+                player1: {
+                    connected: true,
+                    score: 0
+                },
+                player2: {
+                    connected: false,
+                    score: 0
+                },
+                currentPlayer: 1,
+                cards: generateCardData(),
+                gameActive: true,
+                matchedPairs: 0,
+                flippedCards: [],
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            // Set up listener for game changes
+            gameRef.on('value', handleGameUpdate);
+            
             // Update UI
-            player1Status.classList.add('connected');
-            player2Status.classList.remove('connected');
+            player1StatusDot.classList.add('connected');
+            player2StatusDot.classList.remove('connected');
             
             // Show message
             updateMessage(`Game created! Share ID: ${gameId} with your friend. Waiting for player 2...`);
-            
-            // Enable game controls
-            gameActive = true;
         }
         
         // Join an existing game
@@ -528,16 +575,121 @@
             // Set player ID
             playerId = 'player2';
             
-            // Update UI
-            player1Status.classList.add('connected');
-            player2Status.classList.add('connected');
+            // Connect to the game in Firebase
+            gameRef = database.ref('games/' + gameId);
+            
+            // Update player2 status
+            gameRef.update({
+                'player2/connected': true,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            // Set up listener for game changes
+            gameRef.on('value', handleGameUpdate);
             
             // Show message
-            updateMessage(`Joined game ${gameId}. Player 1's turn!`);
+            updateMessage(`Joined game ${gameId}. Waiting for game to start...`);
+        }
+        
+        // Handle updates from Firebase
+        function handleGameUpdate(snapshot) {
+            const gameData = snapshot.val();
             
-            // Enable game controls
-            gameActive = true;
-            initGame();
+            if (!gameData) {
+                updateMessage("Game not found! Please check the Game ID.");
+                return;
+            }
+            
+            // Update connection status
+            player1StatusDot.classList.toggle('connected', gameData.player1.connected);
+            player2StatusDot.classList.toggle('connected', gameData.player2.connected);
+            
+            // Update scores
+            score1Element.textContent = gameData.player1.score;
+            score2Element.textContent = gameData.player2.score;
+            
+            // Update current player
+            currentPlayer = gameData.currentPlayer;
+            player1Element.classList.toggle('active', currentPlayer === 1);
+            player2Element.classList.toggle('active', currentPlayer === 2);
+            
+            // Update message based on state
+            if (!gameData.player2.connected) {
+                updateMessage(`Waiting for Player 2 to join... Share ID: ${gameId}`);
+            } else if (gameData.gameActive) {
+                updateMessage(`Player ${currentPlayer}'s turn`);
+            } else {
+                // Game ended
+                let winner;
+                if (gameData.player1.score > gameData.player2.score) {
+                    winner = 'Player 1';
+                } else if (gameData.player2.score > gameData.player1.score) {
+                    winner = 'Player 2';
+                } else {
+                    winner = 'It\'s a tie!';
+                }
+                updateMessage(`Game Over! ${winner} wins! 🎉`);
+            }
+            
+            // Update cards based on game state
+            updateCardsUI(gameData.cards);
+        }
+        
+        // Update cards UI based on Firebase data
+        function updateCardsUI(cardsData) {
+            cardsData.forEach((card, index) => {
+                const cardElement = gameBoard.children[index];
+                if (!cardElement) return;
+                
+                // Update flipped state
+                if (card.flipped && !cardElement.classList.contains('flipped')) {
+                    cardElement.classList.add('flipped');
+                } else if (!card.flipped && cardElement.classList.contains('flipped')) {
+                    cardElement.classList.remove('flipped');
+                }
+                
+                // Update matched state
+                if (card.matched && !cardElement.classList.contains('matched')) {
+                    cardElement.classList.add('matched');
+                }
+            });
+        }
+        
+        // Generate card data for Firebase
+        function generateCardData() {
+            let gameCards = [...symbols, ...symbols];
+            gameCards = shuffleArray(gameCards);
+            
+            return gameCards.map((symbol, index) => ({
+                index: index,
+                symbol: symbol,
+                flipped: false,
+                matched: false
+            }));
+        }
+        
+        // Flip card on click
+        function flipCard() {
+            if (!gameActive || !gameRef) return;
+            
+            const card = this;
+            const cardIndex = parseInt(card.dataset.index);
+            
+            // Don't flip if already flipped or matched
+            if (card.classList.contains('flipped') || card.classList.contains('matched') || flippedCards.length >= 2) {
+                return;
+            }
+            
+            // Don't flip if it's not your turn in online mode
+            if (playerId !== `player${currentPlayer}`) {
+                updateMessage(`It's Player ${currentPlayer}'s turn!`);
+                return;
+            }
+            
+            // Update Firebase
+            gameRef.child('cards/' + cardIndex).update({
+                flipped: true
+            });
         }
         
         // Shuffle array using Fisher-Yates algorithm
@@ -547,100 +699,6 @@
                 [array[i], array[j]] = [array[j], array[i]];
             }
             return array;
-        }
-        
-        // Flip card on click
-        function flipCard() {
-            if (!gameActive) return;
-            
-            const card = this;
-            
-            // Don't flip if already flipped or matched
-            if (card.classList.contains('flipped') || card.classList.contains('matched') || flippedCards.length >= 2) {
-                return;
-            }
-            
-            // Don't flip if it's not your turn in online mode
-            if (gameId && playerId !== `player${currentPlayer}`) {
-                updateMessage(`It's Player ${currentPlayer}'s turn!`);
-                return;
-            }
-            
-            // Flip the card
-            card.classList.add('flipped');
-            flippedCards.push(card);
-            
-            // If two cards are flipped, check for a match
-            if (flippedCards.length === 2) {
-                setTimeout(checkMatch, 800);
-            }
-        }
-        
-        // Check if flipped cards match
-        function checkMatch() {
-            const [card1, card2] = flippedCards;
-            const symbol1 = card1.dataset.symbol;
-            const symbol2 = card2.dataset.symbol;
-            
-            if (symbol1 === symbol2) {
-                // Match found
-                card1.classList.add('matched');
-                card2.classList.add('matched');
-                card1.removeEventListener('click', flipCard);
-                card2.removeEventListener('click', flipCard);
-                
-                // Add animation for matched cards
-                card1.style.transform = 'scale(0.95)';
-                card2.style.transform = 'scale(0.95)';
-                
-                // Update score
-                scores[currentPlayer - 1]++;
-                if (currentPlayer === 1) {
-                    score1Element.textContent = scores[0];
-                } else {
-                    score2Element.textContent = scores[1];
-                }
-                
-                matchedPairs++;
-                flippedCards = [];
-                
-                // Check if game is over
-                if (matchedPairs === symbols.length) {
-                    endGame();
-                    return;
-                }
-                
-                // Same player goes again
-                updateMessage(`Match found! Player ${currentPlayer} goes again!`);
-            } else {
-                // No match
-                card1.classList.remove('flipped');
-                card2.classList.remove('flipped');
-                flippedCards = [];
-                
-                // Switch player
-                currentPlayer = currentPlayer === 1 ? 2 : 1;
-                player1Element.classList.toggle('active');
-                player2Element.classList.toggle('active');
-                updateMessage(`No match! Player ${currentPlayer}'s turn.`);
-            }
-        }
-        
-        // End the game
-        function endGame() {
-            gameActive = false;
-            clearInterval(timer);
-            
-            let winner;
-            if (scores[0] > scores[1]) {
-                winner = 'Player 1';
-            } else if (scores[1] > scores[0]) {
-                winner = 'Player 2';
-            } else {
-                winner = 'It\'s a tie!';
-            }
-            
-            updateMessage(`Game Over! ${winner} wins! 🎉`);
         }
         
         // Update game message
